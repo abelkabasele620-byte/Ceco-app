@@ -1,0 +1,6 @@
+{
+  "name": "C’ECO — Marketplace Sécurisée RDC",
+  "description": "Plateforme de commerce électronique sécurisée pour la République Démocratique du Congo. Achète. Paie. Reçois. En toute sécurité avec Trust Score, Mobile Money, livraison par code OTP et protection des transactions.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
