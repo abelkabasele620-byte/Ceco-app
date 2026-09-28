@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import {
   User,
   UserRole,
@@ -28,6 +28,7 @@ import {
   INITIAL_MESSAGES,
   INITIAL_FRAUD_ALERTS,
 } from '../data/mockData';
+import { supabase, isSupabaseConfigured, testSupabaseConnection } from '../lib/supabase';
 
 export type AppViewMode = 'buyer' | 'seller' | 'courier' | 'admin' | 'docs';
 export type DeviceFrame = 'mobile' | 'desktop';
@@ -45,6 +46,26 @@ interface AppContextType {
   usdToCdfRate: number;
   formatPrice: (amountUSD: number) => string;
   formatPriceDetailed: (amountUSD: number) => { usd: string; cdf: string };
+
+  // Supabase Integration & Auth
+  isSupabaseConnected: boolean;
+  supabaseSession: any;
+  authModalOpen: boolean;
+  setAuthModalOpen: (open: boolean) => void;
+  isSupabaseLoading: boolean;
+  signInWithSupabase: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  signUpWithSupabase: (data: {
+    email: string;
+    password: string;
+    fullName: string;
+    phone: string;
+    role: UserRole;
+    city?: string;
+    businessName?: string;
+    rccmNumber?: string;
+  }) => Promise<{ success: boolean; error?: string; message?: string }>;
+  signOutFromSupabase: () => Promise<void>;
+  refreshProductsFromSupabase: () => Promise<void>;
 
   // Data
   products: Product[];
@@ -100,6 +121,37 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+// Helper mapper for Supabase products to App Product model
+function mapSupabaseProduct(p: any): Product {
+  return {
+    id: p.id,
+    sellerId: p.seller_id || 'sel-001',
+    sellerName: p.seller_name || 'Boutique Partenaire C’ECO',
+    sellerCity: p.seller_city || p.city || 'Kinshasa',
+    sellerVerified: p.seller_verified ?? true,
+    sellerTrustScore: Number(p.seller_trust_score ?? 92),
+    name: p.name,
+    category: p.category as any,
+    priceUSD: Number(p.price_usd),
+    originalPriceUSD: p.original_price_usd ? Number(p.original_price_usd) : undefined,
+    condition: (p.condition as any) || 'Neuf',
+    stockAvailable: Number(p.stock_available ?? 1),
+    stockReserved: Number(p.stock_reserved ?? 0),
+    images: Array.isArray(p.images) && p.images.length > 0 
+      ? p.images 
+      : ['https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=800&q=80'],
+    description: p.description || '',
+    specifications: typeof p.specifications === 'object' && p.specifications !== null ? p.specifications : {},
+    city: p.city || 'Kinshasa',
+    commune: p.commune || 'Gombe',
+    rating: Number(p.rating ?? 4.8),
+    reviewCount: Number(p.review_count ?? 0),
+    isFeatured: Boolean(p.is_featured),
+    isPopular: Boolean(p.is_popular),
+    createdAt: p.created_at || new Date().toISOString(),
+  };
+}
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User>(() => {
     const saved = localStorage.getItem('ceco_user');
@@ -110,6 +162,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [deviceFrame, setDeviceFrame] = useState<DeviceFrame>('mobile');
   const [currency, setCurrency] = useState<Currency>('USD');
   const usdToCdfRate = 2850; // 1 USD = 2850 CDF
+
+  // Supabase state
+  const [isSupabaseConnected, setIsSupabaseConnected] = useState<boolean>(false);
+  const [supabaseSession, setSupabaseSession] = useState<any>(null);
+  const [authModalOpen, setAuthModalOpen] = useState<boolean>(false);
+  const [isSupabaseLoading, setIsSupabaseLoading] = useState<boolean>(false);
 
   // Navigation states
   const [activeBuyerTab, setActiveBuyerTab] = useState<BuyerTab>('home');
@@ -158,6 +216,233 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [conversations, setConversations] = useState<Conversation[]>(INITIAL_CONVERSATIONS);
   const [messages, setMessages] = useState<InternalMessage[]>(INITIAL_MESSAGES);
   const [fraudAlerts, setFraudAlerts] = useState<FraudAlert[]>(INITIAL_FRAUD_ALERTS);
+
+  // Function to refresh and fetch products directly from Supabase
+  const refreshProductsFromSupabase = useCallback(async () => {
+    if (!isSupabaseConfigured) return;
+    try {
+      setIsSupabaseLoading(true);
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.warn('Note Supabase products:', error.message);
+        return;
+      }
+
+      if (data && data.length > 0) {
+        const loadedProds = data.map(mapSupabaseProduct);
+        setProducts(loadedProds);
+        localStorage.setItem('ceco_products', JSON.stringify(loadedProds));
+      }
+    } catch (err) {
+      console.warn('Supabase fetch products error:', err);
+    } finally {
+      setIsSupabaseLoading(false);
+    }
+  }, []);
+
+  // Function to load user profile from Supabase
+  const loadProfileFromSupabase = useCallback(async (userId: string, email?: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (data && !error) {
+        const updatedUser: User = {
+          id: data.id,
+          fullName: data.full_name || user.fullName,
+          phone: data.phone || user.phone,
+          email: data.email || email || user.email,
+          role: (data.role as UserRole) || 'buyer',
+          city: data.city || 'Kinshasa',
+          avatarUrl: data.avatar_url || user.avatarUrl,
+          isVerified: Boolean(data.is_verified),
+          createdAt: data.created_at || user.createdAt,
+          businessName: data.business_name,
+          rccmNumber: data.rccm_number,
+        };
+        setUser(updatedUser);
+        localStorage.setItem('ceco_user', JSON.stringify(updatedUser));
+        if (data.role) {
+          setActiveRole(data.role as any);
+        }
+      }
+    } catch (err) {
+      console.warn('Error loading Supabase profile:', err);
+    }
+  }, [user]);
+
+  // Initial Supabase connection check & data fetching
+  useEffect(() => {
+    let isMounted = true;
+
+    async function initSupabase() {
+      const test = await testSupabaseConnection();
+      if (isMounted) {
+        setIsSupabaseConnected(test.ok);
+      }
+
+      // Check existing auth session
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (isMounted && data?.session) {
+          setSupabaseSession(data.session);
+          if (data.session.user) {
+            await loadProfileFromSupabase(data.session.user.id, data.session.user.email);
+          }
+        }
+      } catch (err) {
+        console.warn('Auth session check error:', err);
+      }
+
+      // Fetch products from Supabase
+      await refreshProductsFromSupabase();
+    }
+
+    initSupabase();
+
+    // Listen to Supabase auth state change
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (!isMounted) return;
+        setSupabaseSession(session);
+        if (session?.user) {
+          await loadProfileFromSupabase(session.user.id, session.user.email);
+        }
+      }
+    );
+
+    return () => {
+      isMounted = false;
+      authListener.subscription.unsubscribe();
+    };
+  }, [loadProfileFromSupabase, refreshProductsFromSupabase]);
+
+  // Auth: Sign In with Supabase
+  const signInWithSupabase = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+
+      if (data?.session) {
+        setSupabaseSession(data.session);
+        if (data.user) {
+          await loadProfileFromSupabase(data.user.id, data.user.email);
+        }
+        return { success: true };
+      }
+
+      return { success: false, error: 'Session non initialisée' };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Erreur inconnue de connexion' };
+    }
+  };
+
+  // Auth: Sign Up with Supabase
+  const signUpWithSupabase = async (signUpData: {
+    email: string;
+    password: string;
+    fullName: string;
+    phone: string;
+    role: UserRole;
+    city?: string;
+    businessName?: string;
+    rccmNumber?: string;
+  }): Promise<{ success: boolean; error?: string; message?: string }> => {
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: signUpData.email,
+        password: signUpData.password,
+        options: {
+          data: {
+            full_name: signUpData.fullName,
+            phone: signUpData.phone,
+            role: signUpData.role,
+            city: signUpData.city || 'Kinshasa',
+            business_name: signUpData.businessName,
+            rccm_number: signUpData.rccmNumber,
+          },
+        },
+      });
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+
+      if (data?.user) {
+        // Also ensure public.profiles table receives the profile record
+        try {
+          await supabase.from('profiles').upsert({
+            id: data.user.id,
+            email: signUpData.email,
+            full_name: signUpData.fullName,
+            phone: signUpData.phone,
+            role: signUpData.role,
+            city: signUpData.city || 'Kinshasa',
+            business_name: signUpData.businessName,
+            rccm_number: signUpData.rccmNumber,
+            avatar_url: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80`,
+            is_verified: signUpData.role === 'buyer',
+            trust_score: signUpData.role === 'seller' ? 85 : 95,
+          });
+        } catch (profileErr) {
+          console.warn('Profile table insert note:', profileErr);
+        }
+
+        const newUser: User = {
+          id: data.user.id,
+          fullName: signUpData.fullName,
+          phone: signUpData.phone,
+          email: signUpData.email,
+          role: signUpData.role,
+          city: signUpData.city || 'Kinshasa',
+          avatarUrl: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80`,
+          isVerified: true,
+          createdAt: new Date().toISOString(),
+          businessName: signUpData.businessName,
+          rccmNumber: signUpData.rccmNumber,
+        };
+
+        setUser(newUser);
+        localStorage.setItem('ceco_user', JSON.stringify(newUser));
+
+        return {
+          success: true,
+          message: data.session
+            ? 'Compte créé et connecté avec succès !'
+            : 'Compte créé ! Vérifiez votre boîte email si la confirmation est activée sur votre projet Supabase.',
+        };
+      }
+
+      return { success: false, error: 'Création de compte échouée' };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Erreur inconnue d’inscription' };
+    }
+  };
+
+  // Auth: Sign Out
+  const signOutFromSupabase = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.warn('Error signing out:', err);
+    }
+    setSupabaseSession(null);
+    setUser(INITIAL_USER);
+    localStorage.removeItem('ceco_user');
+  };
 
   // Sync to local storage
   useEffect(() => {
@@ -257,6 +542,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setOrders(prev => [newOrder, ...prev]);
 
+    // Async persist to Supabase if connected
+    if (isSupabaseConfigured) {
+      supabase.from('orders').insert({
+        id: newOrder.id,
+        buyer_id: supabaseSession?.user?.id || null,
+        buyer_name: newOrder.buyerName,
+        buyer_phone: newOrder.buyerPhone,
+        seller_id: null,
+        seller_name: newOrder.sellerName,
+        items: newOrder.items,
+        subtotal_usd: newOrder.subtotalUSD,
+        delivery_fee_usd: newOrder.deliveryFeeUSD,
+        platform_fee_usd: newOrder.platformFeeUSD,
+        total_usd: newOrder.totalUSD,
+        delivery_mode: newOrder.deliveryMode,
+        shipping_address: newOrder.shippingAddress,
+        payment_method: newOrder.paymentMethod,
+        payment_status: newOrder.paymentStatus,
+        order_status: newOrder.orderStatus,
+        delivery_otp: newOrder.deliveryOtp,
+        otp_verified: false,
+      }).then(({ error }) => {
+        if (error) console.warn('Order sync to Supabase note:', error.message);
+      });
+    }
+
     // Update product stock
     orderData.items.forEach(item => {
       setProducts(prevProds =>
@@ -304,6 +615,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       })
     );
 
+    // Sync order update to Supabase
+    if (isSupabaseConfigured) {
+      supabase.from('orders')
+        .update({ order_status: newStatus })
+        .eq('id', orderId)
+        .then(() => {});
+    }
+
     // Notify buyer
     const newNotif: NotificationItem = {
       id: `notif-${Date.now()}`,
@@ -337,6 +656,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             : o
         )
       );
+
+      // Update Supabase
+      if (isSupabaseConfigured) {
+        supabase.from('orders')
+          .update({ otp_verified: true, order_status: 'completed', delivered_at: new Date().toISOString() })
+          .eq('id', orderId)
+          .then(() => {});
+      }
 
       // Release escrow balance to seller available balance
       setSellers(prevSellers =>
@@ -510,12 +837,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createdAt: new Date().toISOString(),
     };
     setProducts(prev => [product, ...prev]);
+
+    // Insert to Supabase if connected
+    if (isSupabaseConfigured) {
+      supabase.from('products').insert({
+        id: product.id,
+        seller_id: supabaseSession?.user?.id || null,
+        seller_name: product.sellerName,
+        seller_city: product.sellerCity,
+        seller_verified: product.sellerVerified,
+        seller_trust_score: product.sellerTrustScore,
+        name: product.name,
+        category: product.category,
+        price_usd: product.priceUSD,
+        original_price_usd: product.originalPriceUSD,
+        condition: product.condition,
+        stock_available: product.stockAvailable,
+        images: product.images,
+        description: product.description,
+        specifications: product.specifications,
+        city: product.city,
+        commune: product.commune,
+        rating: product.rating,
+        review_count: product.reviewCount,
+        is_featured: product.isFeatured,
+        is_popular: product.isPopular,
+      }).then(({ error }) => {
+        if (error) console.warn('Supabase product insert note:', error.message);
+      });
+    }
   };
 
   const updateProductStock = (productId: string, newStock: number) => {
     setProducts(prev =>
       prev.map(p => (p.id === productId ? { ...p, stockAvailable: newStock } : p))
     );
+
+    if (isSupabaseConfigured) {
+      supabase.from('products')
+        .update({ stock_available: newStock })
+        .eq('id', productId)
+        .then(() => {});
+    }
   };
 
   const markNotificationAsRead = (id: string) => {
@@ -542,6 +905,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         usdToCdfRate,
         formatPrice,
         formatPriceDetailed,
+        isSupabaseConnected,
+        supabaseSession,
+        authModalOpen,
+        setAuthModalOpen,
+        isSupabaseLoading,
+        signInWithSupabase,
+        signUpWithSupabase,
+        signOutFromSupabase,
+        refreshProductsFromSupabase,
         products,
         sellers,
         categories: CATEGORIES,

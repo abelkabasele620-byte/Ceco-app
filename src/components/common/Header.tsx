@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp, AppViewMode } from '../../context/AppContext';
 import { CecoLogo } from './CecoLogo';
+import { AuthModal } from './AuthModal';
 import {
   Smartphone,
   Maximize2,
@@ -13,6 +14,8 @@ import {
   FileCode2,
   DollarSign,
   Coins,
+  LogIn,
+  Database,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -37,6 +40,10 @@ export const Header: React.FC<HeaderProps> = ({
     user,
     cartTotalCount,
     setActiveBuyerTab,
+    authModalOpen,
+    setAuthModalOpen,
+    isSupabaseConnected,
+    supabaseSession,
   } = useApp();
 
   const [showNotifications, setShowNotifications] = useState(false);
@@ -202,18 +209,40 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
-          {/* User avatar badge */}
-          <div className="flex items-center gap-2 pl-2 border-l border-slate-700">
-            <img
-              src={user.avatarUrl}
-              alt={user.fullName}
-              className="w-7 h-7 rounded-full object-cover ring-2 ring-emerald-500"
-            />
-            <div className="hidden lg:block text-left">
-              <span className="text-xs font-semibold block leading-tight">{user.fullName}</span>
-              <span className="text-[10px] text-slate-400 block">{user.city} (RDC)</span>
+          {/* User avatar badge & Supabase Auth trigger */}
+          <button
+            onClick={() => setAuthModalOpen(true)}
+            id="btn-header-auth"
+            className="flex items-center gap-2 pl-2 border-l border-slate-700 hover:opacity-90 transition-opacity text-left cursor-pointer group"
+            title="Gérer mon compte Supabase (Connexion / Inscription)"
+          >
+            <div className="relative">
+              <img
+                src={user.avatarUrl}
+                alt={user.fullName}
+                className="w-7 h-7 rounded-full object-cover ring-2 ring-emerald-500 group-hover:ring-emerald-400"
+              />
+              <span
+                className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-slate-900 ${
+                  isSupabaseConnected ? 'bg-emerald-400' : 'bg-amber-400'
+                }`}
+                title={isSupabaseConnected ? 'Supabase Connecté' : 'Supabase En attente'}
+              />
             </div>
-          </div>
+            <div className="hidden lg:block text-left">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-semibold block leading-tight">{user.fullName}</span>
+                {supabaseSession && (
+                  <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    Connecté
+                  </span>
+                )}
+              </div>
+              <span className="text-[10px] text-slate-400 block">
+                {supabaseSession ? user.email || 'Supabase Auth' : 'Compte C’ECO (Supabase)'}
+              </span>
+            </div>
+          </button>
         </div>
       </div>
 
@@ -254,6 +283,12 @@ export const Header: React.FC<HeaderProps> = ({
           })}
         </div>
       </div>
+
+      {/* Supabase Auth Modal */}
+      <AuthModal
+        isOpen={authModalOpen}
+        onClose={() => setAuthModalOpen(false)}
+      />
     </header>
   );
 };

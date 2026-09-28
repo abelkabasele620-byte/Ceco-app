@@ -12,6 +12,8 @@ export interface User {
   avatarUrl: string;
   isVerified: boolean;
   createdAt: string;
+  businessName?: string;
+  rccmNumber?: string;
 }
 
 export interface SellerScoreBreakdown {

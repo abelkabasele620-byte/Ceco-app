@@ -13,12 +13,30 @@ import {
   CheckCircle,
   FileText,
   Key,
+  Database,
+  RefreshCw,
+  LogIn,
 } from 'lucide-react';
 
 export const BuyerProfile: React.FC = () => {
-  const { user } = useApp();
+  const {
+    user,
+    setAuthModalOpen,
+    supabaseSession,
+    isSupabaseConnected,
+    signOutFromSupabase,
+    refreshProductsFromSupabase,
+    isSupabaseLoading,
+  } = useApp();
   const [supportModal, setSupportModal] = useState(false);
   const [securityModal, setSecurityModal] = useState(false);
+  const [syncDone, setSyncDone] = useState(false);
+
+  const handleSync = async () => {
+    await refreshProductsFromSupabase();
+    setSyncDone(true);
+    setTimeout(() => setSyncDone(false), 3000);
+  };
 
   return (
     <div className="bg-slate-50 min-h-full pb-24 p-4 animate-in fade-in duration-200">
@@ -47,6 +65,85 @@ export const BuyerProfile: React.FC = () => {
               <MapPin className="w-3.5 h-3.5 text-slate-400" />
               {user.city} (République Démocratique du Congo)
             </p>
+          </div>
+        </div>
+
+        {/* Supabase Cloud Connection & Account Card */}
+        <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-700">
+                <Database className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-xs text-slate-900">Backend Supabase PostgreSQL</h3>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  bnsexwoxjgqjphytgawc.supabase.co
+                </span>
+              </div>
+            </div>
+            <span
+              className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${
+                isSupabaseConnected
+                  ? 'bg-emerald-100 text-emerald-800'
+                  : 'bg-amber-100 text-amber-800'
+              }`}
+            >
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  isSupabaseConnected ? 'bg-emerald-600' : 'bg-amber-600'
+                }`}
+              />
+              {isSupabaseConnected ? 'En ligne' : 'Prêt (Migration)'}
+            </span>
+          </div>
+
+          <div className="p-3 bg-slate-50 rounded-2xl text-xs space-y-1 text-slate-600">
+            <div className="flex justify-between items-center">
+              <span>Statut de session :</span>
+              <strong className="text-slate-900">
+                {supabaseSession ? 'Connecté (Supabase Auth)' : 'Session Locale active'}
+              </strong>
+            </div>
+            {supabaseSession && (
+              <div className="flex justify-between items-center text-[11px]">
+                <span>Email connecté :</span>
+                <span className="font-mono text-emerald-800 font-semibold">{user.email || supabaseSession.user?.email}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            {supabaseSession ? (
+              <button
+                type="button"
+                onClick={signOutFromSupabase}
+                className="flex-1 py-2 px-3 rounded-xl border border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Se déconnecter</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setAuthModalOpen(true)}
+                className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>Connexion / Inscription</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={handleSync}
+              disabled={isSupabaseLoading}
+              className="py-2 px-3 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+              title="Synchroniser le catalogue avec Supabase"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSupabaseLoading ? 'animate-spin text-emerald-600' : ''}`} />
+              <span>{syncDone ? 'Synchronisé !' : 'Actualiser'}</span>
+            </button>
           </div>
         </div>
 
