@@ -538,6 +538,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createdAt: new Date().toISOString(),
       otpVerified: false,
       deliveryOtp: Math.floor(100000 + Math.random() * 900000).toString(),
+      escrowStatus: orderData.escrowStatus || 'held_in_escrow',
+      escrowLockedAt: orderData.escrowLockedAt || new Date().toISOString(),
+      flexpayReference: orderData.flexpayReference || `FP-${Math.floor(10000000 + Math.random() * 90000000)}`,
     };
 
     setOrders(prev => [newOrder, ...prev]);
@@ -563,6 +566,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         order_status: newOrder.orderStatus,
         delivery_otp: newOrder.deliveryOtp,
         otp_verified: false,
+        flexpay_reference: newOrder.flexpayReference,
+        escrow_status: newOrder.escrowStatus,
       }).then(({ error }) => {
         if (error) console.warn('Order sync to Supabase note:', error.message);
       });

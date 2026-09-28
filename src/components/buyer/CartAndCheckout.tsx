@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { AddressDRC, DeliveryMode, PaymentMethod, Product } from '../../types';
+import { FlexPayEscrowModal } from '../common/FlexPayEscrowModal';
+import { FLEXPAY_CONFIG } from '../../services/flexpay';
 import {
   Trash2,
   Plus,
@@ -16,6 +18,8 @@ import {
   AlertTriangle,
   Lock,
   ShoppingBag,
+  Building2,
+  BadgeCheck,
 } from 'lucide-react';
 
 interface CartAndCheckoutProps {
@@ -58,10 +62,13 @@ export const CartAndCheckout: React.FC<CartAndCheckoutProps> = ({
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('mpesa');
   const [paymentPhone, setPaymentPhone] = useState(user.phone || '+243 82 450 9182');
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [flexpayEscrowModalOpen, setFlexpayEscrowModalOpen] = useState(false);
   const [pinPromptModal, setPinPromptModal] = useState(false);
   const [pinCode, setPinCode] = useState('');
   const [confirmedOrderId, setConfirmedOrderId] = useState<string | null>(null);
   const [confirmedOtp, setConfirmedOtp] = useState<string | null>(null);
+  const [confirmedEscrowRef, setConfirmedEscrowRef] = useState<string | null>(null);
+  const [confirmedFlexpayRef, setConfirmedFlexpayRef] = useState<string | null>(null);
 
   // Items to checkout: either direct buy or current cart
   const checkoutItems = directProduct
@@ -99,7 +106,48 @@ export const CartAndCheckout: React.FC<CartAndCheckoutProps> = ({
   ];
 
   const handleStartPayment = () => {
-    setPinPromptModal(true);
+    setFlexpayEscrowModalOpen(true);
+  };
+
+  const handleFlexPaySuccess = (result: {
+    paymentMethod: PaymentMethod;
+    flexpayReference: string;
+    escrowReference: string;
+    transactionNumber: string;
+  }) => {
+    const primarySeller = checkoutItems[0]?.product;
+    const newOrder = placeOrder({
+      buyerId: user.id,
+      buyerName: address.fullName,
+      buyerPhone: address.phone,
+      sellerId: primarySeller?.sellerId || 'seller-konga-tech',
+      sellerName: primarySeller?.sellerName || 'Konga Tech RDC',
+      items: checkoutItems.map(item => ({
+        product: item.product,
+        quantity: item.quantity,
+        priceUSD: item.product.priceUSD,
+      })),
+      subtotalUSD,
+      deliveryFeeUSD,
+      platformFeeUSD,
+      totalUSD,
+      deliveryMode,
+      shippingAddress: address,
+      paymentMethod: result.paymentMethod,
+      paymentStatus: 'successful',
+      orderStatus: 'paid',
+      deliveryOtp: '', // will be set by placeOrder
+      flexpayReference: result.flexpayReference,
+      escrowStatus: 'held_in_escrow',
+      escrowLockedAt: new Date().toISOString(),
+    });
+
+    setPaymentMethod(result.paymentMethod);
+    setConfirmedOrderId(newOrder.id);
+    setConfirmedOtp(newOrder.deliveryOtp);
+    setConfirmedEscrowRef(result.escrowReference);
+    setConfirmedFlexpayRef(result.flexpayReference);
+    setCurrentStep(5);
   };
 
   const handleConfirmPinAndPay = () => {
@@ -130,11 +178,16 @@ export const CartAndCheckout: React.FC<CartAndCheckoutProps> = ({
         paymentStatus: 'successful',
         orderStatus: 'paid',
         deliveryOtp: '', // will be set by placeOrder
+        flexpayReference: `FP-${Math.floor(10000000 + Math.random() * 90000000)}`,
+        escrowStatus: 'held_in_escrow',
+        escrowLockedAt: new Date().toISOString(),
       });
 
       setIsProcessingPayment(false);
       setConfirmedOrderId(newOrder.id);
       setConfirmedOtp(newOrder.deliveryOtp);
+      setConfirmedEscrowRef(`SEC-FP-${newOrder.id.slice(-6)}-${Date.now().toString().slice(-4)}`);
+      setConfirmedFlexpayRef(newOrder.flexpayReference || 'FP-8492019');
       setCurrentStep(5);
     }, 1800);
   };
@@ -540,6 +593,24 @@ export const CartAndCheckout: React.FC<CartAndCheckoutProps> = ({
               </p>
             </div>
 
+            {/* FlexPay Escrow Guaranteed Partner Banner */}
+            <div className="bg-gradient-to-r from-slate-900 to-emerald-950 text-white rounded-2xl p-4 border border-emerald-500/30 shadow-sm flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 flex items-center justify-center shrink-0">
+                  <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-extrabold text-xs text-white">Séquestre Sécurisé FlexPay</span>
+                    <span className="px-1.5 py-0.5 rounded bg-emerald-500/30 text-emerald-300 text-[9px] font-bold">RDC Officiel</span>
+                  </div>
+                  <p className="text-[10px] text-slate-300 mt-0.5">
+                    Fonds consignés et garantis sur compte bancaire jusqu'à vérification du colis avec votre code secret OTP.
+                  </p>
+                </div>
+              </div>
+            </div>
+
             {/* Total Recap Pill */}
             <div className="bg-slate-900 text-white rounded-2xl p-4 flex items-center justify-between shadow-md">
               <div>
@@ -717,10 +788,11 @@ export const CartAndCheckout: React.FC<CartAndCheckoutProps> = ({
               id="btn-initiate-payment"
               onClick={handleStartPayment}
               disabled={isProcessingPayment}
-              className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2"
+              className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 group"
             >
-              <Lock className="w-4 h-4" />
-              <span>Valider et Payer {totalPrice.usd}</span>
+              <Lock className="w-4 h-4 text-emerald-200 group-hover:scale-110 transition-transform" />
+              <span>Valider & Verrouiller sous Séquestre FlexPay ({totalPrice.usd})</span>
+              <ArrowRight className="w-4 h-4 ml-1" />
             </button>
           </div>
         )}
@@ -734,14 +806,40 @@ export const CartAndCheckout: React.FC<CartAndCheckoutProps> = ({
               </div>
 
               <div>
-                <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider bg-emerald-50 px-2.5 py-1 rounded-full">
-                  Paiement sécurisé avec succès
+                <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                  Fonds Verrouillés sous Séquestre
                 </span>
                 <h1 className="text-lg sm:text-xl font-extrabold text-slate-900 mt-2">
-                  Commande Confirmée !
+                  Commande Confirmée & Sécurisée !
                 </h1>
                 <p className="text-xs text-slate-500 font-mono mt-1">
                   N° de référence : <strong className="text-slate-900">{confirmedOrderId}</strong>
+                </p>
+              </div>
+
+              {/* FlexPay & Bank Escrow Certificate Box */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-left space-y-2 text-xs">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                  <span className="font-extrabold text-slate-900 flex items-center gap-1.5">
+                    <Building2 className="w-4 h-4 text-emerald-600" />
+                    Certificat de Séquestre Bancaire
+                  </span>
+                  <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full">
+                    FlexPay RDC & Rawbank
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 font-mono text-[11px] text-slate-600">
+                  <div>
+                    <span className="text-slate-400 block text-[9px] uppercase">Réf. Séquestre :</span>
+                    <strong className="text-slate-900">{confirmedEscrowRef || 'SEC-FP-928101'}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[9px] uppercase">ID Transaction FlexPay :</span>
+                    <strong className="text-slate-900">{confirmedFlexpayRef || 'FP-8492019'}</strong>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-500 pt-1">
+                  Les fonds restent bloqués sur notre compte séquestre fiduciaire. Le vendeur sera crédité uniquement après confirmation de livraison avec le code OTP ci-dessous.
                 </p>
               </div>
 
@@ -870,6 +968,17 @@ export const CartAndCheckout: React.FC<CartAndCheckoutProps> = ({
           </div>
         </div>
       )}
+
+      {/* Official FlexPay Mobile Money Escrow Modal */}
+      <FlexPayEscrowModal
+        isOpen={flexpayEscrowModalOpen}
+        onClose={() => setFlexpayEscrowModalOpen(false)}
+        amountUSD={totalUSD}
+        orderId={confirmedOrderId || `CECO-2026-${Math.floor(100000 + Math.random() * 900000)}`}
+        customerName={address.fullName}
+        customerPhone={paymentPhone}
+        onPaymentSuccess={handleFlexPaySuccess}
+      />
     </div>
   );
 };

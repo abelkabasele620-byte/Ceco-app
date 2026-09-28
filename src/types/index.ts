@@ -171,6 +171,35 @@ export interface Order {
   hasDispute?: boolean;
   disputeId?: string;
   hasReview?: boolean;
+  flexpayReference?: string;
+  escrowStatus?: 'held_in_escrow' | 'released' | 'refunded' | 'disputed';
+  escrowLockedAt?: string;
+  escrowReleasedAt?: string;
+}
+
+export type FlexPayOperator = 'mpesa' | 'orangemoney' | 'airtelmoney' | 'afrimoney' | 'card';
+
+export interface FlexPayPaymentRequest {
+  merchant?: string;
+  type: '1' | '2'; // 1 = Mobile Money, 2 = Carte Bancaire
+  reference: string;
+  amount: number;
+  currency: 'USD' | 'CDF';
+  description: string;
+  phone: string;
+  callbackUrl?: string;
+}
+
+export interface FlexPayPaymentResponse {
+  success: boolean;
+  orderNumber?: string;
+  code?: string | number;
+  message: string;
+  transactionReference: string;
+  escrowReference: string;
+  operator: FlexPayOperator;
+  status: 'SUCCESS' | 'PENDING' | 'FAILED';
+  rawResponse?: unknown;
 }
 
 export interface Review {
