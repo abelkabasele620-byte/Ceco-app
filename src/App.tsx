@@ -103,7 +103,7 @@ export function App() {
         )}
       </main>
 
-      {/* Fenêtre modale de connexion / inscription */}
+      {/* Fenêtre modale de connexion / inscription */
       <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} />
     </div>
   );
