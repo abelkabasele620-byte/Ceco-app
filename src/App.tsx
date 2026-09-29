@@ -1,70 +1,110 @@
-import React, { useState } from 'react';
-import { AppProvider, useApp } from './context/AppContext';
-import { Header } from './components/common/Header';
-import { BuyerApp } from './components/buyer/BuyerApp';
-import { SellerDashboard } from './components/seller/SellerDashboard';
-import { CourierDashboard } from './components/courier/CourierDashboard';
-import { AdminDashboard } from './components/admin/AdminDashboard';
-import { Wifi, Battery, Signal } from 'lucide-react';
+import { useState } from 'react';
+import { useUserRole } from './hooks/useUserRole';
+import { AuthModal } from './components/AuthModal';
+import { CourierDashboard } from './components/CourierDashboard'; // Votre composant avec la validation OTP
+import { supabase } from './lib/supabaseClient';
 
-const MainLayout: React.FC = () => {
-  const { activeRole } = useApp();
-  const [isMobileFrame, setIsMobileFrame] = useState(true);
+export function App() {
+  const { role, loading } = useUserRole();
+  const [showAuthModal, setShowAuthModal] = useState(false);
+
+  // Déconnexion
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-400 gap-3">
+        <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-sm font-medium">Chargement de C'ECO...</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-slate-900 flex flex-col font-sans text-slate-900 selection:bg-emerald-500 selection:text-white">
-      {/* Universal Top Navigation */}
-      <Header
-        isMobileFrame={isMobileFrame}
-        onToggleMobileFrame={() => setIsMobileFrame(!isMobileFrame)}
-      />
+    <div className="min-h-screen bg-slate-950 text-white flex flex-col">
+      {/* En-tête principal */}
+      <header className="p-4 border-b border-slate-800/80 bg-slate-900/50 backdrop-blur-md sticky top-0 z-40 flex justify-between items-center">
+        <div>
+          <h1 className="text-xl font-black text-emerald-400 tracking-wide">C'ECO</h1>
+          {role && (
+            <span className="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              Espace {role === 'buyer' ? 'Acheteur' : role === 'seller' ? 'Vendeur' : role === 'courier' ? 'Livreur' : 'Admin'}
+            </span>
+          )}
+        </div>
 
-      {/* Body Area */}
-      <main className="flex-1 flex justify-center items-start p-0 sm:p-4 overflow-y-auto">
-        {isMobileFrame && activeRole !== 'admin' ? (
-          /* Android Phone Mockup Frame */
-          <div className="w-full max-w-[430px] my-0 sm:my-3 bg-slate-950 rounded-none sm:rounded-[44px] p-0 sm:p-3 shadow-2xl border-0 sm:border-[5px] sm:border-slate-800 relative transition-all">
-            {/* Phone Speaker & Camera Notch (Desktop frame view) */}
-            <div className="hidden sm:flex justify-between items-center px-6 py-2 text-white text-[11px] font-semibold">
-              <span>09:41</span>
-              <div className="w-16 h-3.5 bg-slate-900 rounded-full mx-auto" />
-              <div className="flex items-center gap-1.5">
-                <Signal className="w-3 h-3" />
-                <Wifi className="w-3 h-3" />
-                <Battery className="w-3.5 h-3.5" />
-              </div>
-            </div>
+        <div>
+          {role ? (
+            <button
+              onClick={handleLogout}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs rounded-xl border border-slate-700 transition-colors"
+            >
+              Déconnexion
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowAuthModal(true)}
+              className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl shadow-md transition-colors"
+            >
+              Se connecter / S'inscrire
+            </button>
+          )}
+        </div>
+      </header>
 
-            {/* Inner Screen Container */}
-            <div className="bg-slate-50 rounded-none sm:rounded-[36px] overflow-hidden min-h-screen sm:min-h-[780px] sm:max-h-[840px] flex flex-col relative overflow-y-auto scrollbar-none">
-              {activeRole === 'buyer' && <BuyerApp />}
-              {activeRole === 'seller' && <SellerDashboard />}
-              {activeRole === 'courier' && <CourierDashboard />}
-            </div>
-
-            {/* Bottom Home Indicator Bar (Desktop frame view) */}
-            <div className="hidden sm:flex justify-center py-2">
-              <div className="w-32 h-1 bg-slate-700 rounded-full" />
-            </div>
+      {/* Contenu dynamique selon le rôle */}
+      <main className="flex-1 p-4 max-w-4xl mx-auto w-full">
+        {!role && (
+          <div className="text-center py-12 space-y-4">
+            <h2 className="text-2xl font-bold text-white">Bienvenue sur C'ECO Marketplace</h2>
+            <p className="text-slate-400 text-sm max-w-md mx-auto">
+              Achetez et vendez en toute confiance grâce à notre système de séquestre sécurisé.
+            </p>
+            <button
+              onClick={() => setShowAuthModal(true)}
+              className="px-6 py-3 bg-emerald-500 text-slate-950 font-bold text-sm rounded-xl shadow-lg hover:bg-emerald-400 transition-colors"
+            >
+              Commencer maintenant
+            </button>
           </div>
-        ) : (
-          /* Full Responsive Screen View */
-          <div className="w-full max-w-6xl bg-white sm:rounded-3xl shadow-xl overflow-hidden min-h-[calc(100vh-80px)] my-0 sm:my-2">
-            {activeRole === 'buyer' && <BuyerApp />}
-            {activeRole === 'seller' && <SellerDashboard />}
-            {activeRole === 'courier' && <CourierDashboard />}
-            {activeRole === 'admin' && <AdminDashboard />}
+        )}
+
+        {/* Vue Livreur */}
+        {role === 'courier' && <CourierDashboard />}
+
+        {/* Vue Vendeur */}
+        {role === 'seller' && (
+          <div className="p-6 bg-slate-900 border border-slate-800 rounded-2xl">
+            <h2 className="text-lg font-bold text-emerald-400 mb-2">Tableau de bord Vendeur</h2>
+            <p className="text-xs text-slate-400">Gérez vos articles, vos stocks et vos ventes en cours.</p>
+            {/* Insérez ou importez ici votre composant SellerDashboard */}
+          </div>
+        )}
+
+        {/* Vue Acheteur */}
+        {role === 'buyer' && (
+          <div className="space-y-6">
+            <div className="p-6 bg-slate-900 border border-slate-800 rounded-2xl">
+              <h2 className="text-lg font-bold text-emerald-400 mb-1">Espace Acheteur</h2>
+              <p className="text-xs text-slate-400">Parcourez le catalogue et suivez vos commandes actives.</p>
+            </div>
+            {/* Insérez ou importez ici vos composants Marketplace & BuyerOrders */}
+          </div>
+        )}
+
+        {/* Vue Administrateur */}
+        {role === 'admin' && (
+          <div className="p-6 bg-slate-900 border border-slate-800 rounded-2xl">
+            <h2 className="text-lg font-bold text-amber-400 mb-2">Espace Administration</h2>
+            <p className="text-xs text-slate-400">Gestion globale des utilisateurs, litiges et séquestres.</p>
           </div>
         )}
       </main>
-    </div>
-  );
-};
 
-export default function App() {
-  return (
-    <AppProvider>
-      <MainLayout />
-    </AppProvider>
+      {/* Fenêtre modale de connexion / inscription */}
+      <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} />
+    </div>
   );
 }
