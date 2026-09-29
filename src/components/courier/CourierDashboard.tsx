@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { OtpValidationModal } from '../OtpValidationModal';
 import {
   Bike,
   Package,
@@ -15,6 +16,7 @@ import {
 
 export const CourierDashboard: React.FC = () => {
   const { orders, verifyDeliveryOtp, formatPriceDetailed } = useApp();
+const [selectedOrderForOtp, setSelectedOrderForOtp] = useState<any>(null);
 
   // Active missions for couriers (status in_delivery or preparing)
   const activeMissions = orders.filter(
@@ -238,6 +240,18 @@ export const CourierDashboard: React.FC = () => {
         ) : (
           <div className="bg-white rounded-3xl p-8 text-center text-xs text-slate-500">
             Aucune mission assignée en ce moment.
+{selectedOrderForOtp && (
+  <OtpValidationModal
+    orderId={selectedOrderForOtp.id}
+    expectedOtp={selectedOrderForOtp.otpCode || selectedOrderForOtp.otp_code}
+    onSuccess={() => {
+      setSelectedOrderForOtp(null);
+      alert('Livraison confirmée avec succès !');
+    }}
+    onClose={() => setSelectedOrderForOtp(null)}
+  />
+)}
+
           </div>
         )}
       </div>
